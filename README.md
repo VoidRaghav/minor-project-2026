@@ -1,6 +1,6 @@
 # Explainable AI for Agriculture and Healthcare
 
-Most AI models in medicine and farming give an answer without saying why. This project builds interpretable prediction models for three tasks:
+Most AI models in medicine and farming give an answer without saying why. This project builds interpretable prediction models for three tasks, from **images** (three pretrained CNNs compared, explained with Grad-CAM) and from **measurements** (random forests, explained with exact Shapley values):
 
 - **Disease diagnosis**: is a breast tumour sample malignant or benign?
 - **Crop health**: is a field healthy, short of nutrients, water stressed or at risk of disease?
@@ -64,7 +64,51 @@ The test suite checks this for every domain, and the benchmarks below measure th
 
 The server trains any missing model on first start (a few seconds). After that it loads the saved files.
 
-## Datasets
+## Image models
+
+The same three ImageNet-pretrained CNNs are fine-tuned on one image dataset per domain and compared: **MobileNetV2**, **EfficientNet-B0** and **ResNet-50**. Every prediction is explained with a **Grad-CAM** heatmap. In the web app you upload an image (or pick a held-out test image) and see all three models side by side.
+
+| Domain | Task | Dataset | Classes | Train / val / test |
+| --- | --- | --- | --- | --- |
+| Healthcare | Pneumonia detection | Paediatric chest X-rays (Kermany et al., 2018), 5,824 images | Normal, Pneumonia | 4,078 / 883 / 863 |
+| Agriculture | Bean leaf disease | iBean, Makerere AI Lab, 1,295 field photos | Angular leaf spot, Bean rust, Healthy | 1,034 / 133 / 128 |
+| Food | Fresh vs rotten produce | Fruits and vegetables, 12 types, 5,382 images | Fresh, Rotten | 1,500* / 823 / 835 |
+
+Data handling (`python -m app.vision.prepare`):
+
+- **X-rays are split by patient.** The public release shares patients between its train and test folders (278 test patients also appear in training), which would let a model recognise a patient instead of the disease. All images are pooled and re-split 70/15/15 by patient, stratified by class.
+- **Duplicates are removed** from the produce dataset (194 found by comparing small thumbnails) before it is split 70/15/15 per source class.
+- All images are resized to 224 x 224.
+
+Training (`python -m app.vision.train`): new output layer on ImageNet weights, AdamW (learning rate 2e-4 for pretrained layers, 1e-3 for the new layer, one-cycle schedule), 8 epochs, batch size 32, random crop, rotation and brightness/contrast (horizontal flip for leaf and produce only), class-weighted cross-entropy with label smoothing 0.05, seed 42. The epoch with the best validation macro F1 is kept and the test set is used once. To save memory the produce models were trained with `--train-limit 1500` (a class-balanced random subset of the 3,724 training images); validation and test sets are unchanged. Runs on the Apple GPU (MPS), CUDA or CPU.
+
+### Image benchmarks
+
+Held-out test images, measured on an Apple M4. Time is the median for one image (batch of 1). Bold = best macro F1 per task.
+
+| Task | Model | Test accuracy | Macro F1 | Recall per class | Size | Time / image | Grad-CAM deletion drop (highlighted vs random) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Chest X-ray | **MobileNetV2** | **97.6%** | **0.969** | 95.3 / 98.4 | 4.6 MB | 4.7 ms | 21.1 vs 12.3 pp |
+|  | EfficientNet-B0 | 96.4% | 0.956 | 98.3 / 95.7 | 8.2 MB | 6.8 ms | 12.9 vs 5.8 pp |
+|  | ResNet-50 | 97.0% | 0.961 | 90.3 / 99.5 | 47.2 MB | 12.6 ms | 21.9 vs 12.6 pp |
+| Bean leaf | MobileNetV2 | 96.1% | 0.961 | 93.0 / 97.7 / 97.6 | 4.6 MB | 5.4 ms | 26.9 vs 5.0 pp |
+|  | EfficientNet-B0 | 95.3% | 0.953 | 88.4 / 97.7 / 100.0 | 8.2 MB | 15.0 ms | 47.2 vs 31.6 pp |
+|  | **ResNet-50** | **96.9%** | **0.969** | 95.3 / 95.3 / 100.0 | 47.2 MB | 26.0 ms | 26.0 vs 8.0 pp |
+| Produce freshness | MobileNetV2 | 94.0% | 0.940 | 93.3 / 94.7 | 4.6 MB | 4.9 ms | 27.1 vs 3.3 pp |
+|  | EfficientNet-B0 | 94.5% | 0.945 | 93.5 / 95.5 | 8.2 MB | 6.4 ms | 28.8 vs 4.8 pp |
+|  | **ResNet-50** | **96.2%** | **0.962** | 96.4 / 95.9 | 47.2 MB | 11.1 ms | 33.2 vs 9.1 pp |
+
+Grad-CAM deletion test: the 20% of pixels with the highest heat are blanked and the drop in the predicted-class probability is compared with blanking a random blob of the same size (200 test images per model). A faithful heatmap should hurt the prediction more than a random region.
+
+The leaf test set has only 128 images, so one image is 0.8 points and small differences between models are not meaningful. Training times are not reported because they were measured on a shared laptop.
+
+| Chest X-ray: three models and their Grad-CAM heatmaps | Bean leaf |
+| --- | --- |
+| ![X-ray analysis](docs/screenshots/image-xray.png) | ![Leaf analysis](docs/screenshots/image-leaf.png) |
+
+![Model comparison](docs/screenshots/image-models.png)
+
+## Measurement datasets
 
 | Domain | Source | Samples | Features | Classes |
 | --- | --- | --- | --- | --- |
@@ -126,8 +170,9 @@ Disease confusion matrix on the 143 test samples: 51/53 malignant and 88/90 beni
 
 | Layer | Tools |
 | --- | --- |
+| Image models | PyTorch 2.8, torchvision (MobileNetV2, EfficientNet-B0, ResNet-50), Pillow |
 | ML | scikit-learn 1.6 (random forest, permutation importance), NumPy |
-| Explainability | Custom exact Shapley explainer (`backend/app/ml/explainer.py`), no SHAP dependency |
+| Explainability | Grad-CAM (`backend/app/vision/gradcam.py`) and a custom exact Shapley explainer (`backend/app/ml/explainer.py`), no SHAP dependency |
 | API | FastAPI, Pydantic v2, Uvicorn |
 | Frontend | React 18, React Router 6, Vite 6, plain CSS with light and dark themes |
 | Testing | pytest, FastAPI TestClient |
@@ -151,6 +196,13 @@ backend/
       train.py            retrain all models
       benchmark.py        baselines, cross-validation, explainer timing
     services/analysis.py  validation, prediction, contribution ranking, summary
+    vision/
+      prepare.py          download, de-duplicate, patient-level split, resize
+      models.py           MobileNetV2, EfficientNet-B0, ResNet-50 with new heads
+      train.py            fine-tune, benchmark, deletion test
+      gradcam.py          Grad-CAM and heatmap overlay
+      service.py          load models, predict, explain
+      domains.py          the three image tasks
     schemas.py            request and response models
   tests/test_api.py
 frontend/
@@ -176,7 +228,14 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-The first start trains all three models into `backend/artifacts/`.
+The first start trains the three random forest models into `backend/artifacts/`.
+
+For the image models (needs about 1 GB of disk for the datasets and a few GB of memory):
+
+```bash
+python -m app.vision.prepare   # download and prepare images into data/vision/
+python -m app.vision.train     # fine-tune and benchmark the 9 image models
+```
 
 **Frontend** (in a second terminal)
 
@@ -192,7 +251,7 @@ Open http://localhost:5173. The Vite dev server forwards `/api` requests to port
 
 ```bash
 cd backend
-python -m pytest              # 12 tests: additivity, endpoints, validation
+python -m pytest              # 20 tests: additivity, endpoints, validation, image models, Grad-CAM
 python -m app.ml.train        # retrain and overwrite saved models
 python -m app.ml.benchmark    # regenerate the benchmark tables
 ```
@@ -202,6 +261,7 @@ python -m app.ml.benchmark    # regenerate the benchmark tables
 | Page | Path |
 | --- | --- |
 | Overview | `/` |
+| Chest X-ray, bean leaf, produce images | `/vision/xray`, `/vision/leaf`, `/vision/fruit` |
 | Disease diagnosis | `/analyze/disease` |
 | Crop health | `/analyze/crop` |
 | Food quality | `/analyze/food` |
@@ -214,6 +274,9 @@ python -m app.ml.benchmark    # regenerate the benchmark tables
 | GET | `/api/domains/{id}` | Features with bounds and defaults, classes, metrics, confusion matrix, importance |
 | GET | `/api/domains/{id}/sample` | A random held-out test sample and its true label |
 | POST | `/api/domains/{id}/analyze` | Prediction, probabilities, reference rate, contributions, summary |
+| GET | `/api/vision/domains` | Image tasks with the test metrics of every model |
+| GET | `/api/vision/domains/{id}` | Task details and held-out test images |
+| POST | `/api/vision/domains/{id}/predict` | Multipart image upload; returns each model's prediction, probabilities and Grad-CAM heatmap |
 
 Interactive API docs are at http://localhost:8000/docs.
 
@@ -258,11 +321,13 @@ The form, charts, evaluation page and API work automatically from the spec.
 - Crop and food results come from synthetic data and show that the method works, not how it performs in the field.
 - Exact Shapley cost grows as 2ⁿ. Beyond about 15 features, a sampling-based or tree-specific estimator is needed.
 - Contributions are measured against the reference set. When features are strongly correlated, hybrid rows can combine values that never occur together.
-- Only tabular inputs are supported.
+- Image models are trained on one public dataset per task; results on images from other hospitals, farms or cameras are untested.
+- Grad-CAM heatmaps are coarse (a 7 x 7 grid) and show where the model looked, not exact boundaries.
+- This is a research prototype and is not validated for clinical, agricultural or food-safety decisions.
 
 ## Roadmap
 
 - Replace the synthetic data with field datasets (soil and crop sensor logs, milk quality lab data)
-- Image models for leaf disease and radiology, with Grad-CAM heatmaps
+- Test the image models on external datasets and try sharper explanations (Grad-CAM++)
 - Counterfactuals: the smallest change to the inputs that flips the prediction
 - Exportable per-sample explanation reports

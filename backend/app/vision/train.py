@@ -172,11 +172,26 @@ def train_one(domain, arch, data, epochs, dev):
     }
 
 
+def subsample(split, limit):
+    """Keep a stratified random subset of the training images (same class proportions, fixed seed)."""
+    images, labels, files = split
+    gen = torch.Generator().manual_seed(RANDOM_STATE)
+    keep = []
+    for cls in labels.unique():
+        idx = (labels == cls).nonzero().flatten()
+        n = max(1, round(limit * len(idx) / len(labels)))
+        keep.append(idx[torch.randperm(len(idx), generator=gen)[:n]])
+    keep = torch.cat(keep).sort().values
+    return images[keep], labels[keep], [files[i] for i in keep.tolist()]
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--domain", choices=list(VISION_DOMAINS))
     parser.add_argument("--arch", choices=list(ARCHS))
     parser.add_argument("--epochs", type=int, default=6)
+    parser.add_argument("--train-limit", type=int, default=0,
+                        help="train on a class-balanced random subset of this many images (saves time and memory)")
     args = parser.parse_args()
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -186,6 +201,8 @@ def main():
         if args.domain and domain.id != args.domain:
             continue
         data = [load_split(domain.id, s) for s in ("train", "val", "test")]
+        if args.train_limit and len(data[0][0]) > args.train_limit:
+            data[0] = subsample(data[0], args.train_limit)
         print(f"{domain.name}: train {len(data[0][0])}, val {len(data[1][0])}, test {len(data[2][0])} on {dev}", flush=True)
         for arch in ARCHS.values():
             if args.arch and arch.id != args.arch:

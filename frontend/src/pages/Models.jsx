@@ -3,43 +3,14 @@ import { api } from "../api.js";
 import { percent } from "../format.js";
 import { useRequest } from "../hooks/useRequest.js";
 import BarList from "../components/BarList.jsx";
+import ConfusionMatrix from "../components/ConfusionMatrix.jsx";
 import Status from "../components/Status.jsx";
+import VisionComparison from "../components/VisionComparison.jsx";
 
 const loadAll = async () => {
-  const domains = await api.domains();
-  return Promise.all(domains.map((d) => api.domain(d.id)));
+  const [domains, vision] = await Promise.all([api.domains(), api.visionDomains()]);
+  return { tabular: await Promise.all(domains.map((d) => api.domain(d.id))), vision };
 };
-
-function ConfusionMatrix({ classes, matrix }) {
-  return (
-    <div className="table-wrap">
-      <table className="matrix">
-        <thead>
-          <tr>
-            <th scope="col">Actual \ Predicted</th>
-            {classes.map((c) => (
-              <th key={c} scope="col">
-                {c}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {matrix.map((row, i) => (
-            <tr key={classes[i]}>
-              <th scope="row">{classes[i]}</th>
-              {row.map((count, j) => (
-                <td key={classes[j]} className={i === j ? "diag" : undefined}>
-                  {count}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 export default function Models() {
   const { data, error, loading } = useRequest(loadAll, []);
@@ -49,13 +20,43 @@ export default function Models() {
       <header className="page-head">
         <h1>Models</h1>
         <p className="muted">
-          Evaluation on a stratified 25% held-out test split. Global importance is the drop in test accuracy when a
-          feature is randomly shuffled (permutation importance, 10 repeats).
+          Image models are ImageNet-pretrained CNNs fine-tuned on each dataset and evaluated on its held-out test
+          images. Tabular models are random forests evaluated on a stratified 25% held-out split.
         </p>
       </header>
 
       <Status loading={loading} error={error}>
-        {data?.map((domain) => (
+        <h2>Image models</h2>
+        <p className="muted small">
+          Grad-CAM deletion: average drop in the predicted-class probability when the 20% most highlighted pixels are
+          blanked, compared with blanking a random region of the same size. A larger gap means a more faithful heatmap.
+        </p>
+        {data?.vision.map((domain) => (
+          <section key={domain.id} className="card stack">
+            <div className="section-head">
+              <div>
+                <span className="eyebrow">{domain.sector}</span>
+                <h2>{domain.name}</h2>
+              </div>
+              <Link to={`/vision/${domain.id}`} className="button">
+                Open
+              </Link>
+            </div>
+            <VisionComparison domain={domain} />
+            <div className="models-grid">
+              {domain.models.map((m) => (
+                <div key={m.arch} className="stack">
+                  <h3>{m.name} confusion matrix</h3>
+                  <ConfusionMatrix classes={domain.classes} matrix={m.confusion_matrix} />
+                </div>
+              ))}
+            </div>
+            <p className="muted small">Data: {domain.data_source}</p>
+          </section>
+        ))}
+
+        <h2>Tabular models</h2>
+        {data?.tabular.map((domain) => (
           <section key={domain.id} className="card stack">
             <div className="section-head">
               <div>

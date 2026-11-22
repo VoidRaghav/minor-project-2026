@@ -5,6 +5,9 @@ const links = [
   { to: "/analyze/disease", label: "Disease" },
   { to: "/analyze/crop", label: "Crop" },
   { to: "/analyze/food", label: "Food" },
+  { to: "/vision/xray", label: "X-ray" },
+  { to: "/vision/leaf", label: "Leaf" },
+  { to: "/vision/fruit", label: "Fruit" },
   { to: "/models", label: "Models" },
 ];
 

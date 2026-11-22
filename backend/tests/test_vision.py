@@ -33,6 +33,17 @@ def test_gradcam_shape_and_range():
         assert float(heat.min()) >= 0 and float(heat.max()) <= 1
 
 
+def test_health_lists_image_models(client):
+    body = client.get("/api/health").json()
+    assert body["status"] == "ok"
+    assert set(body["image_models"]) == set(VISION_DOMAINS)
+
+
+def test_list_image_domains(client):
+    ids = [d["id"] for d in client.get("/api/vision/domains").json()]
+    assert ids == list(VISION_DOMAINS)
+
+
 def test_unknown_image_domain(client):
     assert client.get("/api/vision/domains/unknown").status_code == 404
 

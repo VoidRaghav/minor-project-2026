@@ -6,23 +6,21 @@ import Status from "../components/Status.jsx";
 
 const steps = [
   {
-    title: "Give an input",
-    text: "Upload a chest X-ray, leaf or produce photo, or adjust clinical, sensor and lab readings.",
+    title: "Give an image",
+    text: "Upload a chest X-ray, bean leaf or produce photo, or pick a held-out test image.",
   },
   {
     title: "Models predict",
-    text: "Three pretrained CNNs (MobileNetV2, EfficientNet-B0, ResNet-50) classify images; random forests handle measurements.",
+    text: "Three ImageNet-pretrained CNNs, MobileNetV2, EfficientNet-B0 and ResNet-50, each classify the image.",
   },
   {
     title: "Prediction is explained",
-    text: "Grad-CAM heatmaps show which image regions drove each CNN. Exact Shapley values split tabular predictions by input.",
+    text: "A Grad-CAM heatmap shows which image regions drove each model, so the three can be compared side by side.",
   },
 ];
 
-const loadHome = () => Promise.all([api.visionDomains(), api.domains()]);
-
 export default function Home() {
-  const { data, error, loading } = useRequest(loadHome, []);
+  const { data, error, loading } = useRequest(api.visionDomains, []);
 
   return (
     <div className="stack-lg">
@@ -30,14 +28,13 @@ export default function Home() {
         <h1>Explainable AI for Agriculture and Healthcare</h1>
         <p className="lead">
           Transparent predictions for disease diagnosis, crop health assessment and food quality analysis. Every
-          result shows which inputs drove it and by how much.
+          prediction comes with a heatmap of the image regions that drove it.
         </p>
       </section>
 
       <Status loading={loading} error={error}>
-        <h2>Image analysis</h2>
         <section className="grid-3">
-          {data?.[0].map((domain) => (
+          {data?.map((domain) => (
             <Link key={domain.id} to={`/vision/${domain.id}`} className="card card-link">
               <span className="eyebrow">{domain.sector}</span>
               <h2>{domain.name}</h2>
@@ -47,17 +44,6 @@ export default function Home() {
                   Best test accuracy {percent(Math.max(...domain.models.map((m) => m.accuracy)), 1)}
                 </span>
               )}
-            </Link>
-          ))}
-        </section>
-        <h2>Measurement analysis</h2>
-        <section className="grid-3">
-          {data?.[1].map((domain) => (
-            <Link key={domain.id} to={`/analyze/${domain.id}`} className="card card-link">
-              <span className="eyebrow">{domain.sector}</span>
-              <h2>{domain.name}</h2>
-              <p className="muted">{domain.description}</p>
-              <span className="card-foot">Test accuracy {percent(domain.accuracy, 1)}</span>
             </Link>
           ))}
         </section>

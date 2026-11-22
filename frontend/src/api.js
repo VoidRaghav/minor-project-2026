@@ -22,15 +22,6 @@ async function upload(path, form) {
 }
 
 export const api = {
-  domains: () => request("/domains"),
-  domain: (id) => request(`/domains/${id}`),
-  sample: (id) => request(`/domains/${id}/sample`),
-  analyze: (id, values, signal) =>
-    request(`/domains/${id}/analyze`, {
-      method: "POST",
-      body: JSON.stringify({ values }),
-      signal,
-    }),
   visionDomains: () => request("/vision/domains"),
   visionDomain: (id) => request(`/vision/domains/${id}`),
   visionSampleUrl: (id, name) => `/api/vision/domains/${id}/samples/${encodeURIComponent(name)}`,
